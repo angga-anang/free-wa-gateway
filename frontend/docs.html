@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<script>
+  (function () {
+    if (!sessionStorage.getItem("freegw_dashboard_session")) {
+      window.location.replace("login.html");
+    }
+  })();
+</script>
+<title>Dokumentasi API — FREE GW</title>
+<script>
+  (function () {
+    var t = localStorage.getItem("freegw_theme");
+    if (t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+      document.documentElement.setAttribute("data-theme", "dark");
+    }
+  })();
+</script>
+<link rel="stylesheet" href="assets/css/style.css" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+<style>
+  .doc-tabs { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+  .doc-tab {
+    padding: 9px 16px; border-radius: 999px; border: 1px solid var(--color-border);
+    background: var(--color-surface); color: var(--color-text-muted);
+    font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .doc-tab.active { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+  .doc-panel { display: none; }
+  .doc-panel.active { display: block; }
+  .endpoint-card {
+    background: var(--color-surface); border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg); padding: 18px 20px; margin-bottom: 16px;
+  }
+  .endpoint-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+  .endpoint-title { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 14.5px; }
+  .method-badge { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; font-family: "JetBrains Mono", monospace; }
+  .method-get { background: var(--color-success-soft); color: var(--color-success); }
+  .method-post { background: var(--color-pending-soft); color: #b5760a; }
+  .method-delete { background: var(--color-failed-soft); color: var(--color-failed); }
+  html[data-theme="dark"] .method-post { color: var(--color-pending); }
+  .endpoint-desc { font-size: 13px; color: var(--color-text-muted); margin: 0 0 12px; }
+  .code-box {
+    background: #0f1720; color: #d5eefb; padding: 14px 16px; border-radius: 10px;
+    overflow-x: auto; font-family: "JetBrains Mono", monospace; font-size: 12.5px; line-height: 1.6;
+    white-space: pre; margin: 0;
+  }
+  .code-box-wrap { position: relative; }
+  .code-copy-btn {
+    position: absolute; top: 8px; right: 8px; font-size: 11px; padding: 5px 10px;
+  }
+  .doc-intro { font-size: 13px; color: var(--color-text-muted); margin-bottom: 18px; line-height: 1.6; }
+  .doc-intro code.inline { background: var(--color-surface-alt); padding: 2px 6px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1>Dokumentasi API</h1>
+        <p>Untuk developer yang ingin menghubungkan aplikasi baru ke gateway ini.</p>
+      </div>
+      <button class="btn btn-primary" id="btn-copy-all">
+        <span class="material-symbols-outlined" style="font-size:18px;">content_copy</span> Salin Semua Dokumentasi
+      </button>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <div class="grid grid-2">
+        <div class="field" style="margin-bottom:0;">
+          <label>Base URL (otomatis dari koneksi aktif)</label>
+          <input id="doc-base-url" readonly />
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label>API Key dipakai di contoh (opsional, hanya untuk browser ini)</label>
+          <select id="doc-key-select"></select>
+        </div>
+      </div>
+    </div>
+
+    <div class="doc-tabs">
+      <button class="doc-tab active" data-tab="native">API Modern (Bearer Token)</button>
+      <button class="doc-tab" data-tab="legacy">API Kompatibel Lama (x-api-key)</button>
+    </div>
+
+    <div class="doc-panel active" id="panel-native">
+      <p class="doc-intro">
+        Direkomendasikan untuk integrasi baru. Autentikasi pakai header
+        <code class="inline">Authorization: Bearer &lt;API_KEY&gt;</code>. Setiap pesan
+        yang dikirim otomatis masuk antrean dengan jeda humanized 2-5 detik per perangkat,
+        retry otomatis 3x, dan tercatat penuh di halaman Riwayat Pesan.
+      </p>
+      <div id="native-endpoints"></div>
+    </div>
+
+    <div class="doc-panel" id="panel-legacy">
+      <p class="doc-intro">
+        Meniru kontrak API gateway WA versi lama - cocok untuk aplikasi lama yang tidak
+        bisa/sulit diubah kodenya. Autentikasi pakai header
+        <code class="inline">x-api-key: &lt;API_KEY&gt;</code>. Kalau server Anda hanya
+        punya satu perangkat terhubung, semua endpoint di bawah otomatis memakainya.
+      </p>
+      <div id="legacy-endpoints"></div>
+    </div>
+  </main>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/nav.js"></script>
+<script src="assets/js/docs-data.js"></script>
+<script>
+  renderSidebar("docs");
+
+  const baseUrl = FreeGwAPI.getBaseUrl();
+  document.getElementById("doc-base-url").value = baseUrl;
+
+  async function loadKeyOptions() {
+    const select = document.getElementById("doc-key-select");
+    const storedKey = FreeGwAPI.getApiKey();
+    select.innerHTML = "";
+
+    const placeholderOpt = document.createElement("option");
+    placeholderOpt.value = "<API_KEY_ANDA>";
+    placeholderOpt.textContent = "- tampilkan placeholder -";
+    select.appendChild(placeholderOpt);
+
+    if (storedKey) {
+      const opt = document.createElement("option");
+      opt.value = storedKey;
+      opt.textContent = "Key aktif di browser ini (" + storedKey.slice(0, 14) + "...)";
+      opt.selected = true;
+      select.appendChild(opt);
+    }
+
+    select.addEventListener("change", renderAll);
+  }
+
+  function activeKey() {
+    return document.getElementById("doc-key-select").value || "<API_KEY_ANDA>";
+  }
+
+  function el(html) {
+    const div = document.createElement("div");
+    div.innerHTML = html.trim();
+    return div.firstChild;
+  }
+
+  function renderEndpoint(ep) {
+    const methodClass = { GET: "method-get", POST: "method-post", DELETE: "method-delete" }[ep.method] || "method-post";
+    const responseBlock = ep.response
+      ? '<p class="endpoint-desc" style="margin-top:12px;">Contoh response:</p><pre class="code-box">' + ep.response + "</pre>"
+      : "";
+    const card = el(
+      '<div class="endpoint-card">' +
+        '<div class="endpoint-head"><div class="endpoint-title">' +
+        '<span class="method-badge ' + methodClass + '">' + ep.method + "</span>" +
+        '<span class="mono">' + ep.path + "</span>" +
+        "</div></div>" +
+        '<p class="endpoint-desc"><strong>' + ep.title + "</strong> - " + ep.desc + "</p>" +
+        '<div class="code-box-wrap">' +
+        '<pre class="code-box">' + ep.curl + "</pre>" +
+        '<button class="btn btn-sm code-copy-btn" data-copy>Salin</button>' +
+        "</div>" +
+        responseBlock +
+        "</div>"
+    );
+    card.querySelector("[data-copy]").addEventListener("click", (e) => copyToClipboard(ep.curl, e.target));
+    return card;
+  }
+
+  function renderAll() {
+    const key = activeKey();
+    const nativeWrap = document.getElementById("native-endpoints");
+    const legacyWrap = document.getElementById("legacy-endpoints");
+    nativeWrap.innerHTML = "";
+    legacyWrap.innerHTML = "";
+    FreeGwDocs.nativeEndpoints(baseUrl, key).forEach((ep) => nativeWrap.appendChild(renderEndpoint(ep)));
+    FreeGwDocs.legacyEndpoints(baseUrl, key).forEach((ep) => legacyWrap.appendChild(renderEndpoint(ep)));
+  }
+
+  function fullDocText() {
+    const key = activeKey();
+    const lines = [];
+    lines.push("================================================================");
+    lines.push("  FREE GW - DOKUMENTASI API");
+    lines.push("  Base URL : " + baseUrl);
+    lines.push("  API Key  : " + key);
+    lines.push("================================================================\n");
+
+    lines.push("---- API MODERN (Bearer Token) ----\n");
+    FreeGwDocs.nativeEndpoints(baseUrl, key).forEach((ep) => {
+      lines.push("[" + ep.method + "] " + ep.path + " - " + ep.title);
+      lines.push(ep.desc);
+      lines.push(ep.curl);
+      lines.push("");
+    });
+
+    lines.push("\n---- API KOMPATIBEL LAMA (x-api-key) ----\n");
+    FreeGwDocs.legacyEndpoints(baseUrl, key).forEach((ep) => {
+      lines.push("[" + ep.method + "] " + ep.path + " - " + ep.title);
+      lines.push(ep.desc);
+      lines.push(ep.curl);
+      lines.push("");
+    });
+
+    return lines.join("\n");
+  }
+
+  document.querySelectorAll(".doc-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".doc-tab").forEach((t) => t.classList.remove("active"));
+      document.querySelectorAll(".doc-panel").forEach((p) => p.classList.remove("active"));
+      tab.classList.add("active");
+      document.getElementById("panel-" + tab.dataset.tab).classList.add("active");
+    });
+  });
+
+  document.getElementById("btn-copy-all").addEventListener("click", (e) => {
+    copyToClipboard(fullDocText(), e.target);
+  });
+
+  loadKeyOptions().then(renderAll);
+</script>
+</body>
+</html>

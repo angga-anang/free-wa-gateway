@@ -1,0 +1,270 @@
+================================================================
+  FREE GW — DOKUMENTASI API LAMA (LEGACY COMPATIBILITY LAYER)
+  Base URL : https://gateway-anda.domain.com   (ganti sesuai server Anda)
+  API Key  : (generate di dashboard FREE GW → menu API & Webhook)
+  Header   : x-api-key: <API_KEY_ANDA>
+================================================================
+
+Layer ini dibuat supaya aplikasi lama yang sudah terhubung ke gateway WA
+versi sebelumnya BISA LANGSUNG PAKAI FREE GW tanpa ubah kode sama sekali —
+cukup ganti Base URL dan API Key di konfigurasi aplikasi Anda. Semua path,
+nama field, header, dan format response dibuat identik dengan kontrak API
+lama.
+
+★ APLIKASI LAMA TIDAK BISA DIUBAH SAMA SEKALI (KEY HARDCODED)?
+Kalau API key lama Anda (mis. "c9ca3904-ba01-4a1d-a701-4bc65acdf8b0")
+ter-hardcode di kode aplikasi dan tidak praktis diubah, Anda TIDAK PERLU
+mengganti key tersebut. Di dashboard FREE GW → Settings → API & Webhook →
+Generate Key, centang "Pakai key kustom (migrasi dari gateway lama)" lalu
+tempelkan persis key lama Anda di situ. FREE GW akan mendaftarkan key
+tersebut apa adanya — aplikasi lama Anda hanya perlu diarahkan ke Base URL
+FREE GW yang baru, TANPA menyentuh baris kode mana pun yang berkaitan
+dengan API key.
+
+CATATAN PERBEDAAN PENTING:
+- FREE GW mendukung banyak perangkat (multi-device) dalam satu server.
+  Kalau akun Anda cuma punya SATU perangkat terdaftar, semua endpoint di
+  bawah otomatis memakainya — tidak perlu ubah apa pun. Kalau lebih dari
+  satu, set "Default Device" untuk API key Anda di halaman Settings
+  dashboard, atau sertakan field opsional "device_id" di body request.
+- Jeda pengiriman pesan (anti-banned) sudah otomatis diatur FREE GW
+  (acak 2–5 detik per perangkat) — parameter "delay"/"random_delay" pada
+  /send-bulk tetap diterima untuk kompatibilitas tapi tidak lagi dipakai.
+- /send-button: WhatsApp multi-device modern sudah tidak mendukung pesan
+  tombol interaktif secara resmi. Endpoint ini tetap ada dan tidak akan
+  error — otomatis dikirim sebagai teks biasa dengan opsi bernomor.
+- Setiap pesan yang lewat endpoint di bawah tetap tercatat penuh di
+  dashboard FREE GW (Riwayat Pesan), sama seperti pesan dari API modern.
+
+────────────────────────────────────────────────────────────────
+[1] GET /status  —  Cek status koneksi WhatsApp
+────────────────────────────────────────────────────────────────
+curl -X GET https://gateway-anda.domain.com/status \
+  -H "x-api-key: <API_KEY_ANDA>"
+
+Response sukses:
+{
+  "success": true,
+  "status": "connected",
+  "device": { "phone": "628xx", "name": "Nama WA", "platform": "multi-device" },
+  "uptime": 3600
+}
+
+Response saat belum tersambung:
+{ "success": true, "status": "disconnected" }
+
+────────────────────────────────────────────────────────────────
+[2] POST /send-message  —  Kirim pesan teks
+────────────────────────────────────────────────────────────────
+curl -X POST https://gateway-anda.domain.com/send-message \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: <API_KEY_ANDA>" \
+  -d '{"number":"628123456789","message":"Halo dari sistem!"}'
+
+────────────────────────────────────────────────────────────────
+[3] POST /send-button  —  Pesan dengan opsi (degradasi otomatis ke teks)
+────────────────────────────────────────────────────────────────
+curl -X POST https://gateway-anda.domain.com/send-button \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: <API_KEY_ANDA>" \
+  -d '{
+    "number": "628123456789",
+    "message": "Konfirmasi pesanan Anda:",
+    "buttons": ["Ya, Setuju", "Batal"],
+    "footer": "Bot Verification"
+  }'
+
+Terkirim sebagai:
+  Konfirmasi pesanan Anda:
+
+  1. Ya, Setuju
+  2. Batal
+
+  _Bot Verification_
+
+────────────────────────────────────────────────────────────────
+[4] POST /send-media  —  Kirim file dari URL publik
+────────────────────────────────────────────────────────────────
+curl -X POST https://gateway-anda.domain.com/send-media \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: <API_KEY_ANDA>" \
+  -d '{"number":"628123456789","url":"https://example.com/file.pdf","caption":"Dokumen"}'
+
+Tipe file (gambar/video/dokumen) dideteksi otomatis dari ekstensi URL.
+
+────────────────────────────────────────────────────────────────
+[5] POST /send-bulk  —  Kirim pesan massal
+────────────────────────────────────────────────────────────────
+curl -X POST https://gateway-anda.domain.com/send-bulk \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: <API_KEY_ANDA>" \
+  -d '{
+    "data": [
+      {"number": "628123", "msg": "Halo A!"},
+      {"number": "628124", "msg": "Halo B!"}
+    ],
+    "delay": 10,
+    "random_delay": true
+  }'
+
+Catatan: "delay"/"random_delay" diterima tapi diabaikan — FREE GW selalu
+menerapkan jeda acak 2–5 detik otomatis per perangkat.
+
+────────────────────────────────────────────────────────────────
+[6] POST /validate-number  —  Validasi ketersediaan no. WA target
+────────────────────────────────────────────────────────────────
+curl -X POST https://gateway-anda.domain.com/validate-number \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: <API_KEY_ANDA>" \
+  -d '{"number":"628123456789"}'
+
+Response sukses:
+{ "success": true, "exists": true, "jid": "628xx@s.whatsapp.net" }
+
+────────────────────────────────────────────────────────────────
+[7] GET /groups  —  Ambil daftar semua grup yang diikuti
+────────────────────────────────────────────────────────────────
+curl -X GET https://gateway-anda.domain.com/groups \
+  -H "x-api-key: <API_KEY_ANDA>"
+
+Response sukses:
+[ { "id": "123@g.us", "subject": "Grup Internal" }, ... ]
+
+────────────────────────────────────────────────────────────────
+[8] POST /set-webhook  —  Pasang/ubah webhook URL via API
+────────────────────────────────────────────────────────────────
+curl -X POST https://gateway-anda.domain.com/set-webhook \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: <API_KEY_ANDA>" \
+  -d '{"url":"https://endpoint.anda.com/webhook"}'
+
+Webhook akan menerima event: message.received, message.sent,
+message.delivered, message.read, message.failed, instance.status_changed,
+instance.disconnected — payload lengkap ada di README bagian API modern.
+
+────────────────────────────────────────────────────────────────
+[9] POST /send-file  —  Upload & kirim file via multipart/form-data
+────────────────────────────────────────────────────────────────
+curl -X POST https://gateway-anda.domain.com/send-file \
+  -H "x-api-key: <API_KEY_ANDA>" \
+  -F "number=628123456789" \
+  -F "caption=Laporan bulan ini" \
+  -F "file=@/path/ke/file.pdf"
+(Disarankan menggunakan module HTTP seperti Axios, node-fetch, atau cURL
+asli, hindari men-set Content-Type multipart secara manual.)
+
+Batas ukuran file: 25 MB.
+
+────────────────────────────────────────────────────────────────
+[10] POST /send-base64  —  Kirim file sebagai string Base64
+────────────────────────────────────────────────────────────────
+curl -X POST https://gateway-anda.domain.com/send-base64 \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: <API_KEY_ANDA>" \
+  -d '{
+    "number": "628123456789",
+    "base64": "JVBERi0xLjQ...",
+    "mimetype": "application/pdf",
+    "fileName": "Sertifikat_Nama_Peserta.pdf"
+  }'
+
+PENTING: Selalu sertakan "fileName" dengan nama yang bermakna (bukan
+generik). Kalau field ini tidak dikirim, FREE GW cuma bisa menebak
+ekstensi dari mimetype dan filenya akan tampil generik di WhatsApp
+(mis. "dokumen.pdf"), bukan nama aslinya (mis. "Sertifikat_Budi.pdf").
+
+────────────────────────────────────────────────────────────────
+[11] POST /device/reset  —  Logout perangkat secara remote
+────────────────────────────────────────────────────────────────
+curl -X POST https://gateway-anda.domain.com/device/reset \
+  -H "x-api-key: <API_KEY_ANDA>"
+
+Setelah reset, buka dashboard FREE GW → Perangkat → klik "Hubungkan / QR"
+untuk memindai ulang.
+
+================================================================
+FORMAT RESPONSE STANDAR ENDPOINT KIRIM
+================================================================
+Sukses:
+{
+  "success": true,
+  "message": "Pesan masuk antrean pengiriman.",
+  "to": "628xx@s.whatsapp.net"
+}
+
+Error:
+{
+  "success": false,
+  "message": "Penjelasan error di sini"
+}
+
+================================================================
+MULTI-PERANGKAT (OPSIONAL, HANYA JIKA AKUN ANDA PUNYA >1 PERANGKAT)
+================================================================
+Semua endpoint POST di atas menerima field opsional tambahan:
+
+  "device_id": "<id-perangkat-dari-dashboard>"
+
+Kalau tidak disertakan, FREE GW akan pakai (berurutan):
+  1. "Default Device" yang diset untuk API key Anda di halaman Settings
+  2. Kalau cuma ada 1 perangkat terdaftar di seluruh server → otomatis pakai itu
+  3. Kalau tidak bisa ditentukan → response 400 dengan pesan jelas
+
+================================================================
+INGIN FITUR LEBIH LENGKAP? PAKAI API MODERN FREE GW
+================================================================
+Layer di atas dibuat khusus untuk migrasi tanpa ubah kode. Untuk integrasi
+baru, disarankan pakai API native FREE GW (autentikasi Bearer token,
+endpoint /api/v1/messages/send, dashboard Riwayat Pesan dengan filter
+lengkap, dsb) — lihat README.md di root project untuk dokumentasi lengkap
+dan contoh kode di halaman Settings → Code Playground pada dashboard.
+================================================================
+
+================================================================
+TROUBLESHOOTING — APLIKASI LAMA MASIH GAGAL TERHUBUNG?
+================================================================
+Cek berurutan (paling sering jadi penyebab, dari atas ke bawah):
+
+1. Base URL di konfigurasi aplikasi lama SUDAH diganti ke alamat server
+   FREE GW Anda? (bukan lagi domain gateway lama)
+
+2. API key yang dipakai SUDAH terdaftar di FREE GW? Kalau memakai key
+   lama (custom_key), pastikan proses "Generate Key" dengan key kustom di
+   atas benar-benar berhasil (cek muncul di tabel Bearer Token, statusnya
+   "Aktif"). Response error yang biasa muncul kalau key belum/tidak
+   terdaftar: {"success":false,"message":"API key tidak valid atau sudah
+   dicabut."}
+
+3. Sudah ada minimal SATU perangkat WhatsApp yang berstatus CONNECTED di
+   dashboard FREE GW -> menu Perangkat? Tanpa ini, semua endpoint kirim
+   pesan akan menolak dengan pesan "Belum ada perangkat terdaftar..." atau
+   (kalau perangkat lebih dari satu) "Ada lebih dari satu perangkat
+   terdaftar - set default device...". Solusi: hubungkan minimal 1
+   perangkat, atau set Default Device untuk API key tersebut di halaman
+   Settings.
+
+4. Tes langsung dari terminal server (memisahkan masalah "kode aplikasi
+   lama" dari masalah "server/jaringan"):
+   curl -i -X GET https://gateway-anda.domain.com/status \
+     -H "x-api-key: <API_KEY_ANDA>"
+   - Kalau curl ini SUDAH berhasil tapi aplikasi lama tetap gagal ->
+     masalah ada di kode/konfigurasi aplikasi lama (base URL belum
+     tersimpan, cache config lama, dsb).
+   - Kalau curl ini JUGA gagal -> masalah di server FREE GW itu sendiri
+     (cek firewall/port dengan sudo ss -tlnp, dan sudo systemctl status
+     freegw-backend).
+
+================================================================
+APP LAMA VALIDASI FORMAT KEY (BUKAN NILAI SPESIFIK)?
+================================================================
+Kalau app lama Anda tidak butuh nilai key TERTENTU, tapi menolak key yang
+formatnya bukan UUID (mis. field input punya validasi client-side seperti
+regex UUID) — di dashboard FREE GW -> Settings -> Generate Key, pada
+"Format Key" pilih "UUID acak". FREE GW akan membuatkan key baru berbentuk
+UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx) yang lolos validasi format
+tersebut, tanpa perlu tahu key lama yang mana pun.
+
+Ringkasan 3 opsi saat Generate Key:
+  - Default (fgw_live_...)  -> integrasi baru, tidak ada batasan format
+  - UUID acak                -> app lama validasi FORMAT key (harus UUID)
+  - Key kustom                -> app lama validasi NILAI key spesifik (hardcoded)

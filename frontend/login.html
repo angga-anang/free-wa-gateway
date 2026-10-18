@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Login — FREE GW</title>
+<script>
+  (function () {
+    var t = localStorage.getItem("freegw_theme");
+    if (t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+      document.documentElement.setAttribute("data-theme", "dark");
+    }
+  })();
+</script>
+<link rel="stylesheet" href="assets/css/style.css" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+<style>
+  .login-wrap {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .login-card {
+    width: 100%;
+    max-width: 380px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 32px 28px;
+  }
+  .login-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 19px;
+    margin-bottom: 4px;
+  }
+  .login-brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--color-primary); box-shadow: 0 0 0 4px var(--color-primary-soft); }
+  .login-sub { color: var(--color-text-muted); font-size: 13px; margin: 0 0 24px; }
+  .login-error {
+    display: none;
+    background: var(--color-failed-soft); color: var(--color-failed);
+    font-size: 13px; padding: 10px 12px; border-radius: var(--radius); margin-bottom: 14px;
+  }
+  .login-error.show { display: block; }
+  .login-hint { font-size: 12px; color: var(--color-text-muted); margin-top: 16px; text-align: center; }
+  .advanced-toggle { font-size: 12px; color: var(--color-text-muted); text-align: center; margin-top: 10px; cursor: pointer; text-decoration: underline; }
+  #advanced-fields { display: none; margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--color-border); }
+</style>
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-brand"><span class="dot"></span> FREE GW</div>
+    <p class="login-sub" id="login-subtitle">Masuk untuk mengakses dashboard gateway.</p>
+
+    <div class="login-error" id="login-error"></div>
+
+    <form id="login-form">
+      <div class="field">
+        <label id="password-label">Password</label>
+        <input type="password" id="password" placeholder="Masukkan password" autocomplete="current-password" required />
+      </div>
+      <div class="field" id="field-confirm-input" style="display:none;">
+        <label>Ulangi Password</label>
+        <input type="password" id="password-confirm" placeholder="Ulangi password" autocomplete="new-password" />
+      </div>
+      <button type="submit" class="btn btn-primary" id="btn-submit" style="width:100%; justify-content:center;">Masuk</button>
+    </form>
+
+    <div class="advanced-toggle" id="advanced-toggle">Pengaturan koneksi backend</div>
+    <div id="advanced-fields">
+      <div class="field">
+        <label>Base URL Backend</label>
+        <input id="cfg-base" placeholder="Kosongkan untuk otomatis (same-origin)" />
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-sm" id="btn-save-base" type="button">Simpan Base URL</button>
+        <button class="btn btn-sm" id="btn-reset-base" type="button">Reset ke Otomatis</button>
+      </div>
+      <p style="font-size:11px; color:var(--color-text-muted); margin-top:8px;">
+        Kosongkan/reset kalau dashboard diakses lewat domain/tunnel (Cloudflare Tunnel, ngrok, dst) —
+        backend akan otomatis dianggap satu origin dengan halaman ini.
+      </p>
+    </div>
+
+    <p class="login-hint">Sesi login berlaku 12 jam per browser, dan otomatis berakhir saat tab ditutup.</p>
+  </div>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/api.js"></script>
+<script>
+  const form = document.getElementById("login-form");
+  const errorBox = document.getElementById("login-error");
+  const subtitle = document.getElementById("login-subtitle");
+  const passwordLabel = document.getElementById("password-label");
+  const confirmField = document.getElementById("field-confirm-input");
+  const btnSubmit = document.getElementById("btn-submit");
+  let isBootstrap = false;
+
+  document.getElementById("cfg-base").value = FreeGwAPI.getBaseUrl();
+  document.getElementById("advanced-toggle").onclick = () => {
+    const el = document.getElementById("advanced-fields");
+    el.style.display = el.style.display === "block" ? "none" : "block";
+  };
+  document.getElementById("btn-save-base").onclick = () => {
+    FreeGwAPI.setConfig(document.getElementById("cfg-base").value.trim());
+    checkStatus();
+  };
+  document.getElementById("btn-reset-base").onclick = () => {
+    FreeGwAPI.resetBaseUrl();
+    document.getElementById("cfg-base").value = FreeGwAPI.getBaseUrl();
+    checkStatus();
+  };
+
+  function showError(msg) {
+    errorBox.textContent = msg;
+    errorBox.classList.add("show");
+  }
+  function clearError() {
+    errorBox.classList.remove("show");
+  }
+
+  async function checkStatus() {
+    clearError();
+    try {
+      const res = await FreeGwAPI.dashboardStatus();
+      isBootstrap = !res.data.configured;
+      if (isBootstrap) {
+        subtitle.textContent = "Belum ada password dashboard. Buat password pertama untuk mengamankan akses.";
+        passwordLabel.textContent = "Password Baru (min. 8 karakter)";
+        confirmField.style.display = "block";
+        btnSubmit.textContent = "Buat Password & Masuk";
+      } else {
+        subtitle.textContent = "Masuk untuk mengakses dashboard gateway.";
+        passwordLabel.textContent = "Password";
+        confirmField.style.display = "none";
+        btnSubmit.textContent = "Masuk";
+      }
+    } catch (err) {
+      showError(err.message);
+    }
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    clearError();
+    const password = document.getElementById("password").value;
+
+    btnSubmit.disabled = true;
+    const originalLabel = btnSubmit.textContent;
+    btnSubmit.textContent = "Memproses...";
+
+    try {
+      if (isBootstrap) {
+        const confirmPw = document.getElementById("password-confirm").value;
+        if (password.length < 8) throw new Error("Password minimal 8 karakter.");
+        if (password !== confirmPw) throw new Error("Konfirmasi password tidak cocok.");
+        const res = await FreeGwAPI.bootstrapDashboardPassword(password);
+        FreeGwAPI.setSessionToken(res.data.token);
+      } else {
+        const res = await FreeGwAPI.login(password);
+        FreeGwAPI.setSessionToken(res.data.token);
+      }
+      window.location.href = "index.html";
+    } catch (err) {
+      showError(err.message);
+      btnSubmit.disabled = false;
+      btnSubmit.textContent = originalLabel;
+    }
+  });
+
+  // If already logged in, skip straight to the dashboard.
+  if (FreeGwAPI.isLoggedIn()) {
+    FreeGwAPI.verifySession()
+      .then((res) => {
+        if (res.data.valid) window.location.href = "index.html";
+        else checkStatus();
+      })
+      .catch(() => checkStatus());
+  } else {
+    checkStatus();
+  }
+</script>
+</body>
+</html>
