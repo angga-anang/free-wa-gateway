@@ -1,0 +1,8 @@
+# Secrets and local environment (AGENTS.md: credentials stay in .env only)
+.env
+backend/.env
+
+# Generated / install-time state
+.freegw-install-state
+backend/node_modules/
+backend/dist/
