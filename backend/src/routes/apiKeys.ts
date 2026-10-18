@@ -1,8 +1,8 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
-import { generateApiKey, hashSessionToken } from "../lib/crypto";
-import { bearerAuth } from "../middleware/auth";
+import { generateApiKey } from "../lib/crypto";
+import { bearerAuth, verifyDashboardSession } from "../middleware/auth";
 
 export const apiConfigRouter = Router();
 
@@ -22,20 +22,8 @@ export const apiConfigRouter = Router();
 // proof of being the admin, so it's accepted on its own; Bearer auth
 // remains as a fallback for programmatic key management that isn't going
 // through the dashboard UI at all.
-async function verifyDashboardSession(req: Request): Promise<boolean> {
-  const token = req.headers["x-dashboard-session"] as string | undefined;
-  if (!token) return false;
-  const hash = hashSessionToken(token);
-  const { rows } = await pool.query(
-    `SELECT id FROM dashboard_sessions WHERE token_hash = $1 AND expires_at > NOW()`,
-    [hash]
-  );
-  if (rows.length === 0) return false;
-  pool
-    .query(`UPDATE dashboard_sessions SET last_seen_at = NOW() WHERE id = $1`, [rows[0].id])
-    .catch(() => undefined);
-  return true;
-}
+// The shared verifyDashboardSession lives in middleware/auth.ts so this
+// gate and bearerOrSession validate a session identically.
 
 async function bootstrapOrAuth(req: Request, res: Response, next: NextFunction) {
   if (req.method === "POST" && req.path === "/keys") {

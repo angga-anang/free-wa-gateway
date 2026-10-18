@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { pool } from "../db/pool";
-import { hashApiKey } from "../lib/crypto";
+import { hashApiKey, hashSessionToken } from "../lib/crypto";
 
 // Augment Express Request with the resolved API config
 declare global {
@@ -42,4 +42,41 @@ export async function bearerAuth(req: Request, res: Response, next: NextFunction
   } catch (err) {
     next(err);
   }
+}
+
+// Dashboard login session (X-Dashboard-Session header). The admin proved
+// the password at /api/v1/auth/login, so the SHA-256-hashed token stored in
+// dashboard_sessions is enough proof of the same trust level. Shared by
+// apiConfigRouter's bootstrapOrAuth and bearerOrSession below, so both
+// gates validate a session the same way.
+export async function verifyDashboardSession(req: Request): Promise<boolean> {
+  const token = req.headers["x-dashboard-session"] as string | undefined;
+  if (!token) return false;
+  const hash = hashSessionToken(token);
+  const { rows } = await pool.query(
+    `SELECT id FROM dashboard_sessions WHERE token_hash = $1 AND expires_at > NOW()`,
+    [hash]
+  );
+  if (rows.length === 0) return false;
+  pool
+    .query(`UPDATE dashboard_sessions SET last_seen_at = NOW() WHERE id = $1`, [rows[0].id])
+    .catch(() => undefined);
+  return true;
+}
+
+// Gate for the endpoints the dashboard UI itself calls. Accepts EITHER a
+// Bearer API key (external integrations, docs' native API) OR a valid
+// dashboard session (admin already logged into the UI, no API key stashed
+// in browser localStorage). Callers that send Authorization take the
+// unchanged bearerAuth path; the logged-in dashboard without a key pays one
+// indexed session lookup instead of being rejected 401.
+export async function bearerOrSession(req: Request, res: Response, next: NextFunction) {
+  if (req.headers.authorization) return bearerAuth(req, res, next);
+
+  if (await verifyDashboardSession(req)) return next();
+
+  return res.status(401).json({
+    success: false,
+    message: "Missing or malformed Authorization header. Expected: Bearer <API_KEY> or X-Dashboard-Session",
+  });
 }

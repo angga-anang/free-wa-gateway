@@ -67,7 +67,10 @@ const FreeGwAPI = (() => {
     getApiKey,
     setConfig,
     resetBaseUrl,
-    isConfigured: () => !!getApiKey(),
+    // The dashboard itself is configured once either a login session exists
+    // (the normal case after signing in on this origin) or an API key was
+    // stashed in Settings. External apps still need the key; the UI does not.
+    isConfigured: () => !!getApiKey() || !!getSessionToken(),
 
     health: () => fetch(`${getBaseUrl()}/health`).then((r) => r.ok),
 

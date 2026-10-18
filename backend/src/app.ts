@@ -4,7 +4,7 @@ import path from "path";
 import fs from "fs";
 import { env } from "./config/env";
 import { logger } from "./lib/logger";
-import { bearerAuth } from "./middleware/auth";
+import { bearerOrSession } from "./middleware/auth";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { devicesRouter } from "./routes/devices";
 import { messagesRouter } from "./routes/messages";
@@ -68,11 +68,13 @@ export function createApp() {
   // this router requires a valid Bearer token (see bootstrapOrAuth).
   app.use("/api/v1/auth", apiConfigRouter);
 
-  // F-BE-301: everything else requires Authorization: Bearer <API_KEY>
-  app.use("/api/v1/devices", bearerAuth, devicesRouter);
-  app.use("/api/v1/messages", bearerAuth, messagesRouter);
-  app.use("/api/v1/dashboard", bearerAuth, dashboardRouter);
-  app.use("/api/v1/settings", bearerAuth, gatewaySettingsRouter);
+  // F-BE-301: everything else requires Authorization: Bearer <API_KEY>,
+  // or the dashboard's own login session (X-Dashboard-Session) for the UI,
+  // which has no API key of its own (see bearerOrSession in auth.ts).
+  app.use("/api/v1/devices", bearerOrSession, devicesRouter);
+  app.use("/api/v1/messages", bearerOrSession, messagesRouter);
+  app.use("/api/v1/dashboard", bearerOrSession, dashboardRouter);
+  app.use("/api/v1/settings", bearerOrSession, gatewaySettingsRouter);
 
   // Legacy-compat layer: mounted at the root path (not /api/v1) so old
   // integrations work by only swapping base URL + key. Auth is via
