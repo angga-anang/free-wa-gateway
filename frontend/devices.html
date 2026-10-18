@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<script>
+  (function () {
+    if (!sessionStorage.getItem("freegw_dashboard_session")) {
+      window.location.replace("login.html");
+    }
+  })();
+</script>
+<title>Manajemen Perangkat — FREE GW</title>
+<script>
+  (function () {
+    var t = localStorage.getItem("freegw_theme");
+    if (t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+      document.documentElement.setAttribute("data-theme", "dark");
+    }
+  })();
+</script>
+<link rel="stylesheet" href="assets/css/style.css" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+</head>
+<body>
+<div class="app-shell">
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1>Manajemen Perangkat</h1>
+        <p>Buat sesi baru, pindai QR, dan kelola siklus hidup instance WhatsApp.</p>
+      </div>
+      <button class="btn btn-primary" id="btn-new-device">
+        <span class="material-symbols-outlined" style="font-size:18px;">add</span> Perangkat Baru
+      </button>
+    </div>
+
+    <div class="grid grid-2" id="device-grid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));">
+      <div class="empty-state">Memuat perangkat…</div>
+    </div>
+  </main>
+</div>
+
+<!-- New device modal -->
+<div class="modal-backdrop" id="modal-new">
+  <div class="modal">
+    <h3>Perangkat Baru</h3>
+    <div class="field" style="text-align:left;">
+      <label>Nama Instance</label>
+      <input id="new-device-name" placeholder="cth. WA Notifikasi OTP" />
+    </div>
+    <div class="field" style="text-align:left;">
+      <label>Deskripsi (opsional)</label>
+      <input id="new-device-desc" placeholder="cth. Nomor customer service utama" />
+    </div>
+    <div style="display:flex; gap:10px; justify-content:flex-end;">
+      <button class="btn" onclick="closeModal('modal-new')">Batal</button>
+      <button class="btn btn-primary" id="btn-create-device">Buat</button>
+    </div>
+  </div>
+</div>
+
+<!-- QR modal -->
+<div class="modal-backdrop" id="modal-qr">
+  <div class="modal">
+    <h3 id="qr-device-name">Pindai QR Code</h3>
+    <p style="color:var(--color-text-muted); font-size:13px;">Buka WhatsApp di ponsel &rarr; Perangkat Tertaut &rarr; Tautkan Perangkat</p>
+    <div class="qr-box" id="qr-box"><span style="color:var(--color-text-muted); font-size:13px;">Menunggu QR…</span></div>
+    <div id="qr-status" class="badge pending" style="margin: 0 auto;"><span class="dot"></span> INITIALIZING</div>
+    <div style="margin-top:16px;">
+      <button class="btn" onclick="closeModal('modal-qr')">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/nav.js"></script>
+<script>
+  renderSidebar("devices");
+
+  function closeModal(id) {
+    document.getElementById(id).classList.remove("open");
+    if (id === "modal-qr" && window.__qrSocket) {
+      window.__qrSocket.close();
+      window.__qrSocket = null;
+    }
+  }
+  function openModal(id) { document.getElementById(id).classList.add("open"); }
+
+  document.getElementById("btn-new-device").onclick = () => openModal("modal-new");
+
+  function statusBadge(status) {
+    const map = { CONNECTED: "success", DISCONNECTED: "failed", INITIALIZING: "pending", FAILED: "failed" };
+    return `<span class="badge ${map[status] || "neutral"}"><span class="dot"></span>${escapeHtml(status)}</span>`;
+  }
+
+  async function loadDevices() {
+    const grid = document.getElementById("device-grid");
+    if (!FreeGwAPI.isConfigured()) {
+      grid.innerHTML = '<div class="empty-state">Hubungkan dashboard ke backend terlebih dahulu di halaman <a href="settings.html">Settings</a>.</div>';
+      return;
+    }
+    try {
+      const res = await FreeGwAPI.listDevices();
+      if (!res.data.length) {
+        grid.innerHTML = '<div class="empty-state">Belum ada perangkat. Klik "Perangkat Baru" untuk memulai.</div>';
+        return;
+      }
+      grid.innerHTML = res.data
+        .map(
+          (d) => `
+        <div class="device-card">
+          <div class="device-head">
+            <div>
+              <div class="device-name">${escapeHtml(d.name)}</div>
+              <div class="device-phone">${d.phone_number ? "+" + escapeHtml(d.phone_number) : escapeHtml(d.description) || "Belum terhubung"}</div>
+            </div>
+            ${statusBadge(d.status)}
+          </div>
+          <div class="device-actions">
+            ${d.status !== "CONNECTED"
+              ? `<button class="btn btn-sm btn-primary" onclick="startInit('${d.id}', this)">Hubungkan / QR</button>`
+              : `<button class="btn btn-sm" onclick="restartDevice('${d.id}')">Restart</button>`}
+            ${d.status === "CONNECTED"
+              ? `<button class="btn btn-sm btn-danger" onclick="logoutDevice('${d.id}')">Logout</button>`
+              : ""}
+            <button class="btn btn-sm btn-danger" onclick="deleteDevice('${d.id}')">Hapus</button>
+          </div>
+        </div>`
+        )
+        .join("");
+    } catch (err) {
+      grid.innerHTML = `<div class="empty-state">${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  document.getElementById("btn-create-device").onclick = async () => {
+    const name = document.getElementById("new-device-name").value.trim();
+    const description = document.getElementById("new-device-desc").value.trim();
+    if (!name) return alert("Nama instance wajib diisi.");
+    try {
+      await FreeGwAPI.createDevice(name, description);
+      closeModal("modal-new");
+      document.getElementById("new-device-name").value = "";
+      document.getElementById("new-device-desc").value = "";
+      loadDevices();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  async function startInit(id, btn) {
+    const card = btn && btn.closest(".device-card");
+    const name = card ? card.querySelector(".device-name").textContent : "";
+    document.getElementById("qr-device-name").textContent = `Pindai QR — ${name}`;
+    document.getElementById("qr-box").innerHTML = '<span style="color:var(--color-text-muted); font-size:13px;">Menunggu QR…</span>';
+    document.getElementById("qr-status").outerHTML = '<div id="qr-status" class="badge pending"><span class="dot"></span> INITIALIZING</div>';
+    openModal("modal-qr");
+
+    try {
+      await FreeGwAPI.initDevice(id);
+    } catch (err) {
+      alert(err.message);
+      return;
+    }
+
+    const ws = new WebSocket(FreeGwAPI.deviceSocketUrl(id));
+    window.__qrSocket = ws;
+    ws.onmessage = (evt) => {
+      const msg = JSON.parse(evt.data);
+      if (msg.event === "qr") {
+        document.getElementById("qr-box").innerHTML = `<img src="${escapeHtml(msg.qr)}" alt="QR Code" />`;
+      }
+      if (msg.event === "status") {
+        const map = { CONNECTED: "success", DISCONNECTED: "failed", INITIALIZING: "pending", FAILED: "failed", UNKNOWN: "neutral" };
+        const el = document.getElementById("qr-status");
+        if (el) {
+          el.className = `badge ${map[msg.status] || "neutral"}`;
+          el.innerHTML = `<span class="dot"></span> ${escapeHtml(msg.status)}`;
+        }
+        if (msg.status === "CONNECTED") {
+          loadDevices();
+          setTimeout(() => closeModal("modal-qr"), 1200);
+        }
+      }
+    };
+  }
+
+  async function restartDevice(id) {
+    try { await FreeGwAPI.restartDevice(id); loadDevices(); } catch (err) { alert(err.message); }
+  }
+  async function logoutDevice(id) {
+    if (!confirm("Logout perangkat ini? Sesi akan dihapus dan perlu pindai QR ulang.")) return;
+    try { await FreeGwAPI.logoutDevice(id); loadDevices(); } catch (err) { alert(err.message); }
+  }
+  async function deleteDevice(id) {
+    if (!confirm("Hapus perangkat ini secara permanen beserta datanya?")) return;
+    try { await FreeGwAPI.deleteDevice(id); loadDevices(); } catch (err) { alert(err.message); }
+  }
+
+  loadDevices();
+  setInterval(loadDevices, 10000);
+</script>
+</body>
+</html>

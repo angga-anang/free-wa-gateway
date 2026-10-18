@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<script>
+  (function () {
+    if (!sessionStorage.getItem("freegw_dashboard_session")) {
+      window.location.replace("login.html");
+    }
+  })();
+</script>
+<title>API & Webhook — FREE GW</title>
+<script>
+  (function () {
+    var t = localStorage.getItem("freegw_theme");
+    if (t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+      document.documentElement.setAttribute("data-theme", "dark");
+    }
+  })();
+</script>
+<link rel="stylesheet" href="assets/css/style.css" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+</head>
+<body>
+<div class="app-shell">
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1>API Settings & Webhooks</h1>
+        <p>Kelola koneksi backend, token akses, dan callback webhook.</p>
+      </div>
+    </div>
+
+    <div class="section-title">1. Koneksi Backend</div>
+    <div class="card">
+      <div class="grid grid-2">
+        <div class="field">
+          <label>Base URL Backend</label>
+          <input id="cfg-base" placeholder="Kosongkan untuk otomatis (same-origin)" />
+        </div>
+        <div class="field">
+          <label>API Key Aktif</label>
+          <div style="display:flex; gap:6px;">
+            <input id="cfg-key" placeholder="fgw_live_…" type="password" style="flex:1;" />
+            <button class="btn btn-sm" type="button" id="btn-toggle-key" title="Tampilkan/sembunyikan key">👁</button>
+            <button class="btn btn-sm" type="button" id="btn-copy-cfg-key" title="Salin key ini">Salin</button>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-save-cfg">Simpan & Uji Koneksi</button>
+      <button class="btn" id="btn-reset-base">Reset ke Otomatis</button>
+      <span id="cfg-result" style="margin-left:10px; font-size:13px;"></span>
+      <p style="font-size:11px; color:var(--color-text-muted); margin-top:8px;">
+        Kalau dashboard diakses lewat domain/tunnel (Cloudflare Tunnel, ngrok, dst), kosongkan/reset
+        field ini — backend otomatis dianggap satu origin dengan halaman ini, tidak perlu diisi manual.
+      </p>
+
+      <div id="bootstrap-box" style="margin-top:16px; display:none;">
+        <p style="font-size:13px; color:var(--color-text-muted);">
+          Belum ada API key terdaftar di backend ini. Buat key pertama (bootstrap) untuk mulai menggunakan dashboard:
+        </p>
+        <button class="btn" id="btn-bootstrap">Buat API Key Pertama</button>
+      </div>
+    </div>
+
+    <div class="section-title">2. Bearer Token</div>
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <span style="font-size:13px; color:var(--color-text-muted);">Token digunakan pada header <code class="inline">Authorization: Bearer &lt;API_KEY&gt;</code></span>
+        <button class="btn btn-sm btn-primary" id="btn-new-key">Generate Key</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Label</th><th>Prefix</th><th>Default Device</th><th>Webhook URL</th><th>Status</th><th>Dibuat</th><th></th></tr></thead>
+          <tbody id="keys-body"><tr><td colspan="7" class="empty-state">Memuat…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section-title">3. Jeda Pengiriman & Zona Waktu</div>
+    <div class="card">
+      <div class="grid grid-2">
+        <div>
+          <label style="font-weight:700; font-size:13px; margin-bottom:8px; display:block;">Jeda Anti-Banned (per perangkat)</label>
+          <p style="font-size:12px; color:var(--color-text-muted); margin:0 0 10px;">
+            Jeda acak antar pesan untuk menghindari deteksi spam WhatsApp. Berlaku langsung
+            tanpa perlu restart server.
+          </p>
+          <div style="display:flex; gap:10px; align-items:flex-end;">
+            <div class="field" style="margin-bottom:0; flex:1;">
+              <label>Minimum (detik)</label>
+              <input id="delay-min" type="number" min="0.5" step="0.5" />
+            </div>
+            <div class="field" style="margin-bottom:0; flex:1;">
+              <label>Maksimum (detik)</label>
+              <input id="delay-max" type="number" min="0.5" step="0.5" />
+            </div>
+            <button class="btn btn-primary btn-sm" id="btn-save-delay" style="margin-bottom:1px;">Simpan</button>
+          </div>
+          <p id="delay-result" style="font-size:12px; margin-top:8px;"></p>
+        </div>
+        <div>
+          <label style="font-weight:700; font-size:13px; margin-bottom:8px; display:block;">Zona Waktu Tampilan</label>
+          <p style="font-size:12px; color:var(--color-text-muted); margin:0 0 10px;">
+            Menentukan bagaimana jam &amp; tanggal ditampilkan di Dashboard dan Riwayat Pesan.
+          </p>
+          <select id="timezone-pref"></select>
+          <p id="timezone-preview" style="font-size:12px; color:var(--color-text-muted); margin-top:8px;"></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title">4. Code Playground</div>
+    <div class="card">
+      <div class="filters" style="margin-bottom:10px;">
+        <div style="max-width:220px;">
+          <label>Bahasa</label>
+          <select id="lang-select">
+            <option value="curl">cURL</option>
+            <option value="node">Node.js</option>
+            <option value="python">Python</option>
+            <option value="php">PHP</option>
+          </select>
+        </div>
+      </div>
+      <pre id="code-block" style="background:#0f1720; color:#d5eefb; padding:16px; border-radius:10px; overflow-x:auto; font-family:'JetBrains Mono', monospace; font-size:12.5px; line-height:1.6;"></pre>
+      <button class="btn btn-sm" id="btn-copy">Salin Kode</button>
+    </div>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="modal-new-key">
+  <div class="modal" style="max-width:460px; text-align:left;">
+    <h3 style="text-align:center;">Buat API Key Baru</h3>
+    <div class="field">
+      <label>Label</label>
+      <input id="new-key-label" placeholder="cth. Integration Key" value="Integration Key" />
+    </div>
+    <div class="field">
+      <label>Format Key</label>
+      <select id="new-key-format">
+        <option value="default">Default FREE GW (fgw_live_...)</option>
+        <option value="uuid">UUID acak — untuk app lama yang validasi format UUID</option>
+        <option value="custom">Key kustom — tempel persis key lama Anda</option>
+      </select>
+      <p id="new-key-format-hint" style="font-size:12px; color:var(--color-text-muted); margin-top:6px;"></p>
+      <input id="new-key-custom" placeholder="cth. c9ca3904-ba01-4a1d-a701-4bc65acdf8b0" style="margin-top:8px; display:none;" />
+    </div>
+    <div class="field">
+      <label>Webhook URL</label>
+      <input id="new-key-webhook" placeholder="https://example.com/webhook" />
+      <p style="font-size:11px; color:var(--color-text-muted); margin-top:6px;">
+        Terisi otomatis mengikuti alamat yang sedang Anda buka (IP:port lokal atau domain tunnel) — silakan ubah kalau perlu.
+      </p>
+    </div>
+    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:6px;">
+      <button class="btn" onclick="closeModal('modal-new-key')">Batal</button>
+      <button class="btn btn-primary" id="btn-confirm-new-key">Buat</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-key-result">
+  <div class="modal" style="max-width:460px;">
+    <h3>API Key Dibuat</h3>
+    <p style="font-size:13px; color:var(--color-text-muted);">Simpan key ini sekarang — tidak akan ditampilkan lagi.</p>
+    <div class="mono" id="new-key-value" style="background:var(--color-surface-alt); padding:12px; border-radius:8px; word-break:break-all; margin:10px 0;"></div>
+    <button class="btn btn-sm" id="btn-copy-key">Salin</button>
+    <div style="margin-top:16px;"><button class="btn btn-primary" onclick="document.getElementById('modal-key-result').classList.remove('open')">Selesai</button></div>
+  </div>
+</div>
+
+<script>
+  function closeModal(id) {
+    document.getElementById(id).classList.remove("open");
+  }
+  function openModal(id) {
+    document.getElementById(id).classList.add("open");
+  }
+</script>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/nav.js"></script>
+<script>
+  renderSidebar("settings");
+
+  document.getElementById("cfg-base").value = FreeGwAPI.getBaseUrl();
+  document.getElementById("cfg-key").value = FreeGwAPI.getApiKey();
+
+  // The active key is stored in plaintext in localStorage (it has to be,
+  // to be sent on every request) so — unlike a freshly-generated key,
+  // which the backend only ever reveals once — it CAN be shown/copied
+  // again at any time straight from this field.
+  document.getElementById("btn-toggle-key").onclick = () => {
+    const input = document.getElementById("cfg-key");
+    input.type = input.type === "password" ? "text" : "password";
+  };
+  document.getElementById("btn-copy-cfg-key").onclick = (e) => {
+    const value = document.getElementById("cfg-key").value.trim();
+    if (!value) {
+      alert("Belum ada API key tersimpan di field ini.");
+      return;
+    }
+    copyToClipboard(value, e.target);
+  };
+
+  async function testConnection() {
+    const result = document.getElementById("cfg-result");
+    const ok = await FreeGwAPI.health().catch(() => false);
+    result.style.color = ok ? "var(--color-success)" : "var(--color-failed)";
+    result.textContent = ok ? "✓ Terhubung" : "✗ Tidak dapat menghubungi backend";
+    // Whether to show the "buat key pertama" box is decided by loadKeys()
+    // once it knows how many keys actually exist on this backend — not by
+    // whether THIS browser happens to have a raw key saved locally. A
+    // logged-in dashboard session (password) is enough on its own to list
+    // and manage existing keys, so a second browser/device for the same
+    // admin should see the keys that already exist rather than being
+    // pushed to create a new one.
+    if (ok) loadKeys();
+    else document.getElementById("bootstrap-box").style.display = "none";
+    return ok;
+  }
+
+  document.getElementById("btn-save-cfg").onclick = async () => {
+    const base = document.getElementById("cfg-base").value.trim();
+    const key = document.getElementById("cfg-key").value.trim();
+    FreeGwAPI.setConfig(base, key);
+    await testConnection();
+  };
+
+  document.getElementById("btn-reset-base").onclick = async () => {
+    FreeGwAPI.resetBaseUrl();
+    document.getElementById("cfg-base").value = FreeGwAPI.getBaseUrl();
+    await testConnection();
+  };
+
+  // Auto-check on page load using the base URL detected from config.js /
+  // localStorage, so the user doesn't have to click "Simpan & Uji Koneksi"
+  // just to see whether the backend is already reachable.
+  testConnection();
+
+  // ---- Auto webhook URL default ----
+  // Uses the page's own current origin, so it automatically matches
+  // whatever the dashboard is being accessed through right now — a local
+  // LAN IP:port, or a tunnel domain (Cloudflare Tunnel, ngrok, ...) — with
+  // zero manual configuration. Each additional key gets a numbered path
+  // (/webhook, /webhook1, /webhook2, ...) based on its creation order, so
+  // multiple keys never collide on the same endpoint.
+  function defaultWebhookUrl(index) {
+    const suffix = index > 0 ? String(index) : "";
+    return `${window.location.origin}/webhook${suffix}`;
+  }
+
+  document.getElementById("btn-bootstrap").onclick = async () => {
+    try {
+      const res = await FreeGwAPI.createFirstKey("Dashboard Key");
+      FreeGwAPI.setConfig(null, res.data.api_key);
+      document.getElementById("cfg-key").value = res.data.api_key;
+      showNewKey(res.data.api_key);
+      document.getElementById("bootstrap-box").style.display = "none";
+      // First-ever key: give it the default /webhook endpoint right away.
+      try {
+        await FreeGwAPI.setWebhook(res.data.id, defaultWebhookUrl(0));
+      } catch {
+        /* non-fatal — user can still set it manually in the table below */
+      }
+      loadKeys();
+    } catch (err) {
+      if (/Bearer|Authorization|Invalid or revoked/i.test(err.message)) {
+        alert(
+          "Backend ini sepertinya sudah punya API key dari sesi/percobaan sebelumnya, tapi browser ini belum menyimpannya (key mentah tidak bisa diambil lagi setelah pertama kali dibuat).\n\n" +
+          "Pilihan Anda:\n" +
+          "1) Kalau Anda menyimpan key lama itu di catatan, tempel di kotak \"API Key Aktif\" lalu klik \"Simpan & Uji Koneksi\".\n" +
+          "2) Kalau key lama itu hilang, reset dari server dengan perintah:\n" +
+          "   docker exec -it freegw_postgres psql -U freegw -d freegw_gateway -c \"DELETE FROM api_configs;\"\n" +
+          "   lalu refresh halaman ini dan coba \"Buat API Key Pertama\" lagi."
+        );
+      } else {
+        alert(err.message);
+      }
+    }
+  };
+
+  function showNewKey(key) {
+    document.getElementById("new-key-value").textContent = key;
+    document.getElementById("modal-key-result").classList.add("open");
+  }
+  document.getElementById("btn-copy-key").onclick = (e) => {
+    copyToClipboard(document.getElementById("new-key-value").textContent, e.target);
+  };
+
+  let lastLoadedKeysCount = 0;
+
+  async function loadKeys() {
+    const body = document.getElementById("keys-body");
+    // Listing/managing keys only needs a valid dashboard session (password
+    // login), which this page already requires — it does NOT need a raw
+    // API key saved in this browser's localStorage. That's what makes it
+    // possible to open the dashboard on a different device/browser and
+    // still see and manage the same keys, instead of being forced to
+    // create a new one.
+    try {
+      const [keysRes, devicesRes] = await Promise.all([
+        FreeGwAPI.listKeys(),
+        FreeGwAPI.listDevices().catch(() => ({ data: [] })),
+      ]);
+      document.getElementById("bootstrap-box").style.display =
+        keysRes.data.length === 0 ? "block" : "none";
+      const devices = devicesRes.data || [];
+      const deviceOptions = (selectedId) =>
+        `<option value="">— pilih otomatis —</option>` +
+        devices
+          .map(
+            (d) =>
+              `<option value="${d.id}" ${d.id === selectedId ? "selected" : ""}>${escapeHtml(d.name)}${d.phone_number ? " (" + escapeHtml(d.phone_number) + ")" : ""}</option>`
+          )
+          .join("");
+
+      // Index each key by creation order (oldest = 0) regardless of the
+      // display order below (newest-first), so numbering stays stable as
+      // keys are revoked/rotated/added over time.
+      const byCreatedAsc = [...keysRes.data].sort(
+        (a, b) => new Date(a.created_at) - new Date(b.created_at)
+      );
+      const creationIndex = new Map(byCreatedAsc.map((k, i) => [k.id, i]));
+      lastLoadedKeysCount = keysRes.data.length;
+
+      body.innerHTML = keysRes.data.length
+        ? keysRes.data
+            .map((k) => {
+              const webhookValue = k.webhook_url || defaultWebhookUrl(creationIndex.get(k.id) ?? 0);
+              return `<tr>
+                <td>${escapeHtml(k.label)}</td>
+                <td class="mono">${escapeHtml(k.key_prefix)}…</td>
+                <td>
+                  <select class="default-device-select" data-id="${k.id}" style="min-width:180px;">
+                    ${deviceOptions(k.default_device_id)}
+                  </select>
+                </td>
+                <td>
+                  <input class="webhook-input" data-id="${k.id}" value="${escapeHtml(webhookValue)}" placeholder="https://example.com/webhook" title="${k.webhook_url ? "" : "Terisi otomatis — klik Simpan untuk menyimpannya"}" style="min-width:200px; ${k.webhook_url ? "" : "color:var(--color-text-muted); font-style:italic;"}" />
+                </td>
+                <td>${k.is_active ? '<span class="badge success"><span class="dot"></span>Aktif</span>' : '<span class="badge failed"><span class="dot"></span>Revoked</span>'}</td>
+                <td class="mono">${new Date(k.created_at).toLocaleDateString("id-ID")}</td>
+                <td style="display:flex; gap:6px;">
+                  <button class="btn btn-sm" onclick="saveDefaultDevice('${k.id}')">Simpan</button>
+                  <button class="btn btn-sm" onclick="rotateKey('${k.id}')">Rotate</button>
+                  ${k.is_active ? `<button class="btn btn-sm btn-danger" onclick="revokeKey('${k.id}')">Revoke</button>` : ""}
+                </td>
+              </tr>`;
+            })
+            .join("")
+        : '<tr><td colspan="7" class="empty-state">Belum ada key.</td></tr>';
+    } catch (err) {
+      body.innerHTML = `<tr><td colspan="7" class="empty-state">${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  async function saveDefaultDevice(id) {
+    const select = document.querySelector(`.default-device-select[data-id="${id}"]`);
+    const webhookInput = document.querySelector(`.webhook-input[data-id="${id}"]`);
+    try {
+      await Promise.all([
+        FreeGwAPI.setDefaultDevice(id, select.value || null),
+        FreeGwAPI.setWebhook(id, webhookInput.value.trim()),
+      ]);
+      loadKeys();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function rotateKey(id) {
+    if (!confirm("Rotate key ini? Key lama tidak dapat dipakai lagi.")) return;
+    try {
+      const res = await FreeGwAPI.rotateKey(id);
+      showNewKey(res.data.api_key);
+      loadKeys();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+  async function revokeKey(id) {
+    if (!confirm("Hapus API key ini secara permanen? Key akan langsung dihapus dari sistem dan tidak bisa dipulihkan.")) return;
+    try { await FreeGwAPI.revokeKey(id); loadKeys(); } catch (err) { alert(err.message); }
+  }
+
+  const keyFormatHints = {
+    default: "Format standar FREE GW, acak dan aman. Pakai ini untuk integrasi baru.",
+    uuid: "Menghasilkan key baru berbentuk UUID acak (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx). Pakai ini kalau app lama Anda menolak key yang formatnya bukan UUID, tapi tidak mengecek nilai key tertentu.",
+    custom: "Tempelkan persis key lama Anda di bawah. Pakai ini kalau app lama sudah punya key hardcoded (nilai spesifik) yang tidak bisa diganti sama sekali.",
+  };
+
+  function updateKeyFormatUI() {
+    const format = document.getElementById("new-key-format").value;
+    document.getElementById("new-key-format-hint").textContent = keyFormatHints[format];
+    document.getElementById("new-key-custom").style.display = format === "custom" ? "block" : "none";
+  }
+
+  document.getElementById("btn-new-key").onclick = () => {
+    // This device already knows about `lastLoadedKeysCount` active key(s)
+    // (loadKeys() only needs the dashboard session, not a local API key, so
+    // this count is accurate even on a browser/origin that has never
+    // stored a key). Warn before adding yet another one — a very common
+    // mistake is generating a *new* key from a different access URL
+    // (e.g. a Cloudflare Tunnel domain vs. the local IP) instead of
+    // reusing the existing key, which just leaves multiple valid keys
+    // lying around for what is really a single admin.
+    if (lastLoadedKeysCount > 0) {
+      const proceed = confirm(
+        `Sudah ada ${lastLoadedKeysCount} API key aktif terdaftar di backend ini.\n\n` +
+        `Kalau kamu cuma ingin dashboard ini (browser/domain lain) bisa mengakses ` +
+        `data yang sama, kamu TIDAK perlu key baru — cukup salin salah satu key ` +
+        `yang sudah ada (bagian "API Key Aktif" di atas, atau minta salinannya dari ` +
+        `akses lain) dan tempel di sini.\n\n` +
+        `Lanjutkan membuat key baru?`
+      );
+      if (!proceed) return;
+    }
+    document.getElementById("new-key-label").value = "Integration Key";
+    document.getElementById("new-key-format").value = "default";
+    document.getElementById("new-key-custom").value = "";
+    document.getElementById("new-key-webhook").value = defaultWebhookUrl(lastLoadedKeysCount);
+    updateKeyFormatUI();
+    openModal("modal-new-key");
+  };
+
+  document.getElementById("new-key-format").addEventListener("change", updateKeyFormatUI);
+
+  document.getElementById("btn-confirm-new-key").onclick = async () => {
+    const label = document.getElementById("new-key-label").value.trim() || "API Key";
+    const format = document.getElementById("new-key-format").value;
+    const customKey = document.getElementById("new-key-custom").value.trim();
+    const webhookUrl = document.getElementById("new-key-webhook").value.trim();
+    if (format === "custom" && customKey.length < 6) {
+      return alert("Key kustom minimal 6 karakter.");
+    }
+    try {
+      const res = await FreeGwAPI.createKey(
+        label,
+        webhookUrl || undefined,
+        format === "custom" ? customKey : undefined,
+        format === "uuid" ? "uuid" : undefined
+      );
+      closeModal("modal-new-key");
+      showNewKey(res.data.api_key);
+      loadKeys();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  // ---- Code playground ----
+  function snippet(lang) {
+    const base = FreeGwAPI.getBaseUrl();
+    const key = FreeGwAPI.getApiKey() || "fgw_live_your_api_key";
+    const body = {
+      instance_id: "8fa8c692-7101-4b19-9407-7e6188448d1e",
+      recipient: "6281234567890",
+      type: "text",
+      content: { text: "Kode OTP Anda: 93821" },
+    };
+    const bodyStr = JSON.stringify(body, null, 2);
+
+    if (lang === "curl") {
+      return `curl -X POST ${base}/api/v1/messages/send \\
+  -H "Authorization: Bearer ${key}" \\
+  -H "Content-Type: application/json" \\
+  -d '${JSON.stringify(body)}'`;
+    }
+    if (lang === "node") {
+      return `const res = await fetch("${base}/api/v1/messages/send", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ${key}",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify(${bodyStr}),
+});
+const data = await res.json();
+console.log(data);`;
+    }
+    if (lang === "python") {
+      return `import requests
+
+res = requests.post(
+    "${base}/api/v1/messages/send",
+    headers={"Authorization": "Bearer ${key}"},
+    json=${bodyStr},
+)
+print(res.json())`;
+    }
+    if (lang === "php") {
+      return `<?php
+$ch = curl_init("${base}/api/v1/messages/send");
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_POST => true,
+    CURLOPT_HTTPHEADER => [
+        "Authorization: Bearer ${key}",
+        "Content-Type: application/json",
+    ],
+    CURLOPT_POSTFIELDS => json_encode(${bodyStr}),
+]);
+$response = curl_exec($ch);
+curl_close($ch);
+echo $response;`;
+    }
+    return "";
+  }
+
+  function renderSnippet() {
+    document.getElementById("code-block").textContent = snippet(document.getElementById("lang-select").value);
+  }
+  document.getElementById("lang-select").onchange = renderSnippet;
+  document.getElementById("btn-copy").onclick = (e) =>
+    copyToClipboard(document.getElementById("code-block").textContent, e.target);
+
+  // ---- Jeda Anti-Banned ----
+  async function loadDelaySettings() {
+    if (!FreeGwAPI.isConfigured()) return;
+    try {
+      const res = await FreeGwAPI.getDelaySettings();
+      document.getElementById("delay-min").value = (res.data.minSendDelayMs / 1000).toFixed(1);
+      document.getElementById("delay-max").value = (res.data.maxSendDelayMs / 1000).toFixed(1);
+    } catch (err) {
+      document.getElementById("delay-result").textContent = err.message;
+    }
+  }
+
+  document.getElementById("btn-save-delay").onclick = async () => {
+    const minSec = parseFloat(document.getElementById("delay-min").value);
+    const maxSec = parseFloat(document.getElementById("delay-max").value);
+    const result = document.getElementById("delay-result");
+    if (!(minSec > 0) || !(maxSec > 0) || minSec > maxSec) {
+      result.style.color = "var(--color-failed)";
+      result.textContent = "Nilai tidak valid — minimum harus > 0 dan tidak lebih besar dari maksimum.";
+      return;
+    }
+    try {
+      await FreeGwAPI.setDelaySettings(Math.round(minSec * 1000), Math.round(maxSec * 1000));
+      result.style.color = "var(--color-success)";
+      result.textContent = `✓ Tersimpan — jeda ${minSec}s–${maxSec}s berlaku langsung untuk pesan berikutnya.`;
+    } catch (err) {
+      result.style.color = "var(--color-failed)";
+      result.textContent = err.message;
+    }
+  };
+
+  // ---- Zona Waktu Tampilan ----
+  async function loadTimezoneOptions() {
+    const select = document.getElementById("timezone-pref");
+    const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    const presets = [
+      { value: "auto", label: `Otomatis (ikuti browser — ${browserTz})` },
+      { value: "Asia/Jakarta", label: "WIB — Jakarta, Sumatra, Jawa (UTC+7)" },
+      { value: "Asia/Makassar", label: "WITA — Bali, Kalimantan, Sulawesi (UTC+8)" },
+      { value: "Asia/Jayapura", label: "WIT — Maluku, Papua (UTC+9)" },
+    ];
+    select.innerHTML = presets.map((p) => `<option value="${p.value}">${p.label}</option>`).join("");
+
+    if (FreeGwAPI.isConfigured()) {
+      try {
+        const res = await FreeGwAPI.serverTimezone();
+        if (!presets.some((p) => p.value === res.data.timeZone)) {
+          const opt = document.createElement("option");
+          opt.value = res.data.timeZone;
+          opt.textContent = `Ikuti Zona Waktu Server (${res.data.timeZone})`;
+          select.appendChild(opt);
+        }
+      } catch {
+        /* server timezone unavailable, presets above still work */
+      }
+    }
+
+    select.value = getTimezonePref();
+    updateTimezonePreview();
+  }
+
+  function updateTimezonePreview() {
+    document.getElementById("timezone-preview").textContent = "Contoh tampilan: " + formatDateTime(new Date().toISOString());
+  }
+
+  document.getElementById("timezone-pref").addEventListener("change", (e) => {
+    setTimezonePref(e.target.value);
+    updateTimezonePreview();
+  });
+
+  renderSnippet();
+  loadKeys();
+  loadDelaySettings();
+  loadTimezoneOptions();
+</script>
+</body>
+</html>

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<script>
+  (function () {
+    if (!sessionStorage.getItem("freegw_dashboard_session")) {
+      window.location.replace("login.html");
+    }
+  })();
+</script>
+<title>Riwayat Pesan — FREE GW</title>
+<script>
+  (function () {
+    var t = localStorage.getItem("freegw_theme");
+    if (t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+      document.documentElement.setAttribute("data-theme", "dark");
+    }
+  })();
+</script>
+<link rel="stylesheet" href="assets/css/style.css" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+</head>
+<body>
+<div class="app-shell">
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1>Riwayat Pesan</h1>
+        <p>Audit trail lengkap untuk semua pesan yang melewati gateway.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="filters">
+        <div>
+          <label>Status</label>
+          <select id="f-status">
+            <option value="">Semua</option>
+            <option value="QUEUE">Queue</option>
+            <option value="SENT">Sent</option>
+            <option value="DELIVERED">Delivered</option>
+            <option value="READ">Read</option>
+            <option value="FAILED">Failed</option>
+          </select>
+        </div>
+        <div>
+          <label>Tipe Payload</label>
+          <select id="f-type">
+            <option value="">Semua</option>
+            <option value="TEXT">Text</option>
+            <option value="IMAGE">Image</option>
+            <option value="DOCUMENT">Document</option>
+            <option value="VIDEO">Video</option>
+          </select>
+        </div>
+        <div>
+          <label>Tujuan (MSISDN)</label>
+          <input id="f-recipient" placeholder="cth. 62812…" />
+        </div>
+        <div>
+          <label>Dari Tanggal</label>
+          <input id="f-start" type="date" />
+        </div>
+        <div>
+          <label>Sampai Tanggal</label>
+          <input id="f-end" type="date" />
+        </div>
+        <div style="display:flex; align-items:flex-end;">
+          <button class="btn btn-primary" id="btn-filter">Terapkan Filter</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Waktu</th><th>Perangkat</th><th>Tujuan</th><th>Tipe</th>
+              <th>Preview</th><th>Status</th><th>Error</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="logs-body">
+            <tr><td colspan="8" class="empty-state">Memuat…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px;">
+        <span id="pagination-info" style="font-size:12px; color:var(--color-text-muted);"></span>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-sm" id="btn-prev">Sebelumnya</button>
+          <button class="btn btn-sm" id="btn-next">Selanjutnya</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/nav.js"></script>
+<script>
+  renderSidebar("logs");
+  let page = 1;
+  const limit = 20;
+
+  function badge(status) {
+    const map = { SENT: "success", DELIVERED: "success", READ: "success", QUEUE: "pending", PENDING: "pending", FAILED: "failed" };
+    return `<span class="badge ${map[status] || "neutral"}"><span class="dot"></span>${escapeHtml(status)}</span>`;
+  }
+
+  function payloadPreview(payload) {
+    try {
+      const c = payload.content || {};
+      return (c.text || c.caption || c.fileName || c.url || "-").toString().slice(0, 40);
+    } catch { return "-"; }
+  }
+
+  async function loadLogs() {
+    const body = document.getElementById("logs-body");
+    if (!FreeGwAPI.isConfigured()) {
+      body.innerHTML = '<tr><td colspan="8" class="empty-state">Hubungkan dashboard ke backend di halaman <a href="settings.html">Settings</a>.</td></tr>';
+      return;
+    }
+    const params = { page, limit };
+    const status = document.getElementById("f-status").value;
+    const type = document.getElementById("f-type").value;
+    const recipient = document.getElementById("f-recipient").value;
+    const start = document.getElementById("f-start").value;
+    const end = document.getElementById("f-end").value;
+    if (status) params.status = status;
+    if (type) params.type = type;
+    if (recipient) params.recipient = recipient;
+    if (start) params.start = start;
+    if (end) params.end = end;
+
+    try {
+      const res = await FreeGwAPI.listLogs(params);
+      body.innerHTML = res.data.length
+        ? res.data
+            .map(
+              (row) => `<tr>
+                <td class="mono">${formatDateTime(row.timestamp)}</td>
+                <td>${escapeHtml(row.device_name) || "-"}</td>
+                <td class="mono">${escapeHtml(row.recipient)}</td>
+                <td>${escapeHtml(row.message_type)}</td>
+                <td>${escapeHtml(payloadPreview(row.payload)) || "-"}</td>
+                <td>${badge(row.status)}</td>
+                <td style="max-width:220px; color:var(--color-failed); font-size:12px;">${escapeHtml(row.error_log) || ""}</td>
+                <td>${row.status === "FAILED" ? `<button class="btn btn-sm" onclick="resend('${row.id}')">Kirim Ulang</button>` : ""}</td>
+              </tr>`
+            )
+            .join("")
+        : '<tr><td colspan="8" class="empty-state">Tidak ada data yang cocok dengan filter.</td></tr>';
+
+      const total = res.pagination?.total ?? 0;
+      document.getElementById("pagination-info").textContent =
+        `Halaman ${page} — menampilkan ${res.data.length} dari ${total} total pesan`;
+    } catch (err) {
+      body.innerHTML = `<tr><td colspan="8" class="empty-state">${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  async function resend(id) {
+    try {
+      await FreeGwAPI.resendLog(id);
+      loadLogs();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  document.getElementById("btn-filter").onclick = () => { page = 1; loadLogs(); };
+  document.getElementById("btn-prev").onclick = () => { if (page > 1) { page--; loadLogs(); } };
+  document.getElementById("btn-next").onclick = () => { page++; loadLogs(); };
+
+  loadLogs();
+</script>
+</body>
+</html>

@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<script>
+  (function () {
+    if (!sessionStorage.getItem("freegw_dashboard_session")) {
+      window.location.replace("login.html");
+    }
+  })();
+</script>
+<title>Dashboard Pemantauan — FREE GW</title>
+<script>
+  (function () {
+    var t = localStorage.getItem("freegw_theme");
+    if (t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+      document.documentElement.setAttribute("data-theme", "dark");
+    }
+  })();
+</script>
+<link rel="stylesheet" href="assets/css/style.css" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+</head>
+<body>
+<div class="app-shell">
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1>Dashboard Pemantauan</h1>
+        <p>Ringkasan operasional gateway secara real-time.</p>
+      </div>
+      <div class="conn-status" data-conn-status><span class="led"></span><span>Memeriksa koneksi…</span></div>
+    </div>
+
+    <div class="grid grid-4" id="metric-cards">
+      <div class="card"><h3>Total Terkirim</h3><div class="metric success" id="m-sent">—</div></div>
+      <div class="card"><h3>Dalam Antrean</h3><div class="metric pending" id="m-queue">—</div></div>
+      <div class="card"><h3>Tingkat Sukses</h3><div class="metric success" id="m-success-rate">—</div></div>
+      <div class="card"><h3>Tingkat Gagal</h3><div class="metric failed" id="m-failed-rate">—</div></div>
+    </div>
+
+    <div class="section-title">Status Instance</div>
+    <div class="grid grid-4">
+      <div class="card"><h3>Terhubung</h3><div class="metric success" id="i-connected">—</div></div>
+      <div class="card"><h3>Terputus</h3><div class="metric failed" id="i-disconnected">—</div></div>
+      <div class="card"><h3>Inisialisasi</h3><div class="metric pending" id="i-initializing">—</div></div>
+      <div class="card"><h3>Gagal</h3><div class="metric failed" id="i-failed">—</div></div>
+    </div>
+
+    <div class="section-title">Volume Pesan (7 hari terakhir)</div>
+    <div class="card">
+      <div class="filters" style="margin-bottom:16px;">
+        <div>
+          <label>Granularitas</label>
+          <select id="granularity">
+            <option value="hour">Per Jam</option>
+            <option value="day" selected>Per Hari</option>
+            <option value="week">Per Minggu</option>
+          </select>
+        </div>
+      </div>
+      <canvas id="volume-chart" height="90"></canvas>
+    </div>
+
+    <div class="section-title">Aktivitas Terbaru</div>
+    <div class="card table-wrap">
+      <table>
+        <thead>
+          <tr><th>Waktu</th><th>Perangkat</th><th>Tujuan</th><th>Tipe</th><th>Status</th></tr>
+        </thead>
+        <tbody id="activity-body">
+          <tr><td colspan="5" class="empty-state">Memuat…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/nav.js"></script>
+<script>
+  renderSidebar("dashboard");
+
+  function badge(status) {
+    const map = {
+      SENT: "success", DELIVERED: "success", READ: "success",
+      QUEUE: "pending", PENDING: "pending",
+      FAILED: "failed",
+    };
+    const cls = map[status] || "neutral";
+    return `<span class="badge ${cls}"><span class="dot"></span>${escapeHtml(status)}</span>`;
+  }
+
+  async function loadSummary() {
+    if (!FreeGwAPI.isConfigured()) {
+      document.getElementById("activity-body").innerHTML =
+        '<tr><td colspan="5" class="empty-state">Belum ada API key. Buka halaman <a href="settings.html">Settings</a> untuk menghubungkan dashboard ke backend.</td></tr>';
+      return;
+    }
+    try {
+      const s = await FreeGwAPI.summary();
+      document.getElementById("m-sent").textContent = s.data.total_sent;
+      document.getElementById("m-queue").textContent = s.data.in_queue;
+      document.getElementById("m-success-rate").textContent = s.data.success_rate + "%";
+      document.getElementById("m-failed-rate").textContent = s.data.failed_rate + "%";
+
+      const i = await FreeGwAPI.instancesStatus();
+      document.getElementById("i-connected").textContent = i.data.CONNECTED || 0;
+      document.getElementById("i-disconnected").textContent = i.data.DISCONNECTED || 0;
+      document.getElementById("i-initializing").textContent = i.data.INITIALIZING || 0;
+      document.getElementById("i-failed").textContent = i.data.FAILED || 0;
+
+      const act = await FreeGwAPI.recentActivity(10);
+      const body = document.getElementById("activity-body");
+      body.innerHTML = act.data.length
+        ? act.data
+            .map(
+              (row) => `<tr>
+                <td class="mono">${formatDateTime(row.timestamp)}</td>
+                <td>${escapeHtml(row.device_name) || "-"}</td>
+                <td class="mono">${escapeHtml(row.recipient)}</td>
+                <td>${escapeHtml(row.message_type)}</td>
+                <td>${badge(row.status)}</td>
+              </tr>`
+            )
+            .join("")
+        : '<tr><td colspan="5" class="empty-state">Belum ada aktivitas.</td></tr>';
+
+      loadVolume();
+    } catch (err) {
+      document.getElementById("activity-body").innerHTML =
+        `<tr><td colspan="5" class="empty-state">${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  async function loadVolume() {
+    const granularity = document.getElementById("granularity").value;
+    const v = await FreeGwAPI.volume(granularity).catch(() => ({ data: [] }));
+    drawChart(v.data || []);
+  }
+
+  function drawChart(rows) {
+    const canvas = document.getElementById("volume-chart");
+    const ctx = canvas.getContext("2d");
+    const w = (canvas.width = canvas.clientWidth);
+    const h = (canvas.height = 220);
+    ctx.clearRect(0, 0, w, h);
+
+    if (!rows.length) {
+      ctx.fillStyle = "#5b6b73";
+      ctx.font = "13px Inter";
+      ctx.fillText("Belum ada data untuk periode ini.", 10, 30);
+      return;
+    }
+
+    const max = Math.max(1, ...rows.map((r) => Math.max(+r.sent, +r.failed)));
+    const padding = 30;
+    const barW = (w - padding * 2) / rows.length / 2.4;
+
+    rows.forEach((r, idx) => {
+      const x = padding + idx * ((w - padding * 2) / rows.length);
+      const sentH = (+r.sent / max) * (h - 50);
+      const failedH = (+r.failed / max) * (h - 50);
+
+      ctx.fillStyle = "#10B981";
+      ctx.fillRect(x, h - 30 - sentH, barW, sentH);
+      ctx.fillStyle = "#EF4444";
+      ctx.fillRect(x + barW + 3, h - 30 - failedH, barW, failedH);
+
+      ctx.fillStyle = "#5b6b73";
+      ctx.font = "10px Inter";
+      const label = new Date(r.bucket).toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit" });
+      ctx.fillText(label, x, h - 12);
+    });
+  }
+
+  document.getElementById("granularity").addEventListener("change", loadVolume);
+  loadSummary();
+  setInterval(loadSummary, 15000);
+</script>
+</body>
+</html>
